@@ -20,16 +20,33 @@ CACHE_TTL = getattr(settings, 'CACHE_TTL', DEFAULT_TIMEOUT)
 class CreatePost(APIView):
     authentication_classes = [JWTAuthentication]
 
+    # def post(self, request):
+    #     """
+    #               this method is used to create post data
+    #           """
+    #     serializer = PostSerializer(data=request.data)
+    #     if serializer.is_valid():
+    #         post = serializer.save(user_id=request.user.id)
+    #         return Response(serializer.data, status=status.HTTP_201_CREATED)
+    #     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    #
     def post(self, request):
         """
-                  this method is used to create post data
-              """
-        serializer = PostSerializer(data=request.data)
-        if serializer.is_valid():
-            post = serializer.save(user_id=request.user.id)  # Set the user_id from the authenticated user
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+        This method is used to create post data
+        """
+        try:
+            serializer = PostSerializer(data=request.data)
+            if serializer.is_valid():
+                post = serializer.save(user_id=request.user.id)
+                response_data = {
+                    'message': 'Post created successfully.',
+                    'status': 201,
+                    'data': serializer.data
+                }
+                return Response(response_data, status=201)
+        except Exception as e:
+            logger.exception(e)
+            return Response({"message": str(e), "status": 400, "data": {}}, status=400)
 
     @cache_page(CACHE_TTL)
     def get(self, request, post_id):
@@ -39,16 +56,12 @@ class CreatePost(APIView):
         if cached_data is not None:
             # Data retrieved from cache
             response_data = {
-                'message': 'Data retrieved from cache.',
-                'data': cached_data
-            }
+                'message': 'Data retrieved from cache.', 'data': cached_data}
             return Response(response_data, status=status.HTTP_200_OK)
-
         try:
             post = Post.objects.get(id=post_id)
             serializer = PostSerializer(post)
             data = {"message": "Retrieve Data Successfully", "status": 200, "data": serializer.data}
-
             cache.set(cache_key, data, CACHE_TTL)
             # Data retrieved from the database and stored in cache
             response_data = {
@@ -56,23 +69,13 @@ class CreatePost(APIView):
                 'data': data
             }
             return Response(response_data, status=status.HTTP_200_OK)
-
         except Post.DoesNotExist:
-            # Post not found
-            response_data = {
-                'message': 'Post not found.',
-                'data': {}
-            }
+            response_data = {'message': 'Post not found.', 'data': {}}
             return Response(response_data, status=status.HTTP_404_NOT_FOUND)
-
         except Exception as e:
             logger.exception(e)
             # Failed to retrieve post details from cache or database
-            response_data = {
-                'message': 'Failed to retrieve post details.',
-                'error': str(e),
-                'data': {}
-            }
+            response_data = {'message': 'Failed to retrieve post details.', 'error': str(e), 'data': {}}
             return Response(response_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     # def get(self, request, post_id):
@@ -145,13 +148,10 @@ class LikePostAPIView(APIView):
             # Create a new Like object
             like = Like(post=post, user=request.user)
             like.save()
-
             # Update post likes count
             post.likes_count += 1
             post.save()
-
-            return Response({'message': 'Post liked successfully.'}, status=status.HTTP_200_OK)
-
+            return Response({'message': 'Post liked successfully', "status": 200}, status=status.HTTP_200_OK)
         except Post.DoesNotExist:
             return Response({'message': 'Post not found.'}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
@@ -170,7 +170,6 @@ class LikePostAPIView(APIView):
                 'post': post_serializer.data,
                 'like_count': post.likes_count
             }
-
             return Response(response_data, status=status.HTTP_200_OK)
 
         except Post.DoesNotExist:
@@ -184,14 +183,12 @@ class LikePostAPIView(APIView):
 class FollowerListAPIView(APIView):
     authentication_classes = [JWTAuthentication]
 
-
     def get(self, request, user_id):
         try:
             # Retrieve the followers for the specified user
             followers = Follower.objects.filter(user_id=user_id)
             follower_serializer = FollowerSerializer(followers, many=True)
             return Response(follower_serializer.data, status=status.HTTP_200_OK)
-
         except Exception as e:
             logger.exception(e)
             return Response({'message': 'Failed to retrieve followers.', 'error': str(e)},
@@ -204,21 +201,20 @@ class FollowerListAPIView(APIView):
 
             following_serializer = FollowerSerializer(following, many=True)
 
-            return Response(following_serializer.data, status=status.HTTP_200_OK)
-
+            response_data = {'message': 'Following users retrieved successfully.','status':200,
+                             'data': following_serializer.data}
+            return Response(response_data, status=status.HTTP_200_OK)
         except Exception as e:
             logger.exception(e)
-            return Response({'message': 'Failed to retrieve following users.', 'error': str(e)},
-                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            response_data = {'message': 'Failed to retrieve following users.', 'error': str(e), 'status': 500, 'data': {}}
+            return Response(response_data, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def post(self, request, user_id):
         try:
             # Create a new Follower object to represent the relationship
             follower = Follower(user_id=user_id, follower=request.user)
             follower.save()
-
             return Response({'message': 'User followed successfully.'}, status=status.HTTP_200_OK)
-
         except Exception as e:
             logger.exception(e)
             return Response({'message': 'Failed to follow the user.', 'error': str(e)},
@@ -227,7 +223,6 @@ class FollowerListAPIView(APIView):
     def post(self, request, user_id):
         try:
             followers = Follower.objects.filter(user_id=user_id, follower=request.user)
-
             if followers.exists():
                 # Delete all the follower objects to remove the relationships
                 followers.delete()
@@ -235,7 +230,6 @@ class FollowerListAPIView(APIView):
             else:
                 return Response({'message': 'Follower relationship does not exist.'},
                                 status=status.HTTP_400_BAD_REQUEST)
-
         except Exception as e:
             return Response({'message': 'Failed to unfollow the user.', 'error': str(e)},
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
